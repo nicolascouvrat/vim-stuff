@@ -1,4 +1,4 @@
-root( a= a, b=b, c=func( list( arg) , sep=',',args={a,b,c}) , d=d)
+root( a= a, b=b, c=lines( list( arg) , sep=',',args={a,b,c}) , d=d)
 
 indent(lines('.'))
 

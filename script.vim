@@ -1,15 +1,40 @@
-" define function as one of more non space characters followed with opening and closing parenthesis
-" with more than one argument
-" NOTE: this pattern is probably not good enough (it will match regexes...)
-" A function name can be made of:
-"   - characters
-"   - keywords (see iskeyword vim option)
+" This script can be used to prettify functions in a file.
+"
+" For instance, it will turn:
+"   f(a=a, {b:c})
+" into:
+"   f(
+"     a=a,
+"     {
+"       b:c
+"     }
+"   )
+"
+" The script main entry point is PrettifyFunctions(). It can be used with a range to only prettify
+" functions in a selection.
+"
+" EXAMPLE USAGE
+" This adds a mapper to prettify all functions in selections
+" vnoremap <leader>t :call PrettifyFunctions()<cr>
+" This adds a mapper to prettify all functions in a file
+" nnoremap <leader>t :%call PrettifyFunctions()<cr>
+
+
+
+" fPattern defines a function as one of more keyword (see iskeyword vim help) characters followed
+" with opening and closing parenthesis with more than one non space character in between 
+"
+" FIXME: this is probably not good enough (it will match regexes...)
 let s:fPattern = '\v(\k{-1,})(\(.+\))'
 
 " special characters
 let s:CLOSING = [")", "}"]
 let s:OPENING = ["(", "{"]
 let s:IGNORE = ["'", "\""]
+
+" Dirty hack to track the last line to do the search on. This is necessary, as the base selection
+" will not be valid once functions start to be prettified (as this will add more lines)
+let s:stopLine = 0
 
 function! s:spaces(indent)
   return repeat(" ", a:indent)
@@ -35,10 +60,8 @@ endfunction
 "   example above, args would be "(a=a, {b:c})"
 "   i (int): the initial indentation level of the function (number of spaces from the left)
 " Returns:
-"   the properly formated function as a string
+"   The formatted function as a string, contaning end-of-lines
 function! s:prettifyFunction(f, args, i)
-  echom a:f
-  echom a:args
   let indent = a:i
   let out = a:f
   let ignoreFlag = 0
@@ -64,18 +87,21 @@ function! s:prettifyFunction(f, args, i)
 
     if c ==# ','
       let out .= c . "\n" . s:spaces(indent)
+      let s:stopLine += 1
       continue
     endif
 
     if index(s:OPENING, c) >= 0
       let indent += 2
       let out .= c . "\n" . s:spaces(indent)
+      let s:stopLine += 1
       continue
     endif
 
     if index(s:CLOSING, c) >= 0
       let indent -= 2
       let out .= "\n" . s:spaces(indent) . c
+      let s:stopLine += 1
       continue
     endif
 
@@ -84,36 +110,20 @@ function! s:prettifyFunction(f, args, i)
   return out
 endfunction
 
-function! Format()
-  normal G$
-  let flags = "w"
-  while search(s:fPattern, flags) > 0
-    let base = indent(line('.'))
-    let cmd = 's/' . s:fPattern .  '/\=Prettify(submatch(1), submatch(2), base)/g'
-    execute cmd
-    let flags = "W"
-  endwhile
-endfunction
-
-" FormatFunctions will prettify all functions (see s:fPattern for what is considered a function)
+" PrettifyFunctions will prettify all functions (see s:fPattern for what is considered a function)
 " found in the selection range. This only supports line selections, and will treat other modes of
 " selection as lines (start and end line of the block for blockwise, and current line only for
 " characterwise selection).
-"
-function! FormatFunctions(_)
-  echom "cc"
-  exec "normal '<"
-  let stopline = line("'>")
-  " do not wrap at end of file
-  " TODO: do we need this?
-  echom stopline
-  let flags = "Wc"
-  while search(s:fPattern, flags, stopline) > 0
-    echom "derp"
+function! PrettifyFunctions()
+  " Go to selection start, at column 0
+  exec "normal " . a:firstline . "G"
+  " Set stopLine marker to selection end
+  let s:stopLine = a:lastline
+  " Match starting at cursor position, to handle the case when the pattern starts at column 0
+  let flags = "c"
+  while search(s:fPattern, flags, s:stopLine) > 0
     let base = indent(line('.'))
-    let cmd = 's/' . s:fPattern .  '/\=Prettify(submatch(1), submatch(2), base)/g'
-    execute cmd
+    execute 's/' . s:fPattern .  '/\=s:prettifyFunction(submatch(1), submatch(2), base)/g'
   endwhile
 endfunction
 
-vnoremap <leader>t :<c-u>call FormatFunctions(visualmode())<cr>
